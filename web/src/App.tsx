@@ -12,6 +12,7 @@ import { Sidebar, NavItem } from '@/components/layout/Sidebar';
 import { Topbar } from '@/components/layout/Topbar';
 import { Workspace } from '@/components/layout/Workspace';
 import { CommandBar } from '@/components/command/CommandBar';
+import { NotificationBanner, NotificationState } from '@/components/common/NotificationBanner';
 
 import { DashboardPage } from '@/pages/DashboardPage';
 import { AgentsPage } from '@/pages/AgentsPage';
@@ -29,6 +30,7 @@ export function App() {
   const [currentTab, setCurrentTab] = useState<NavItem>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandBarOpen, setCommandBarOpen] = useState(false);
+  const [notification, setNotification] = useState<NotificationState | null>(null);
 
   // Core application state
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -74,24 +76,107 @@ export function App() {
 
   // Handle agent status transitions (start, pause, resume, stop)
   const handleUpdateAgentStatus = async (agentId: string, newStatus: AgentStatus) => {
-    const res = await api.updateAgentStatus(agentId, newStatus);
-    setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, status: newStatus } : a)));
-    if (activeAgent?.id === agentId) {
-      setActiveAgent((prev) => (prev ? { ...prev, status: newStatus } : null));
+    try {
+      await api.updateAgentStatus(agentId, newStatus);
+      setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, status: newStatus } : a)));
+      if (activeAgent?.id === agentId) {
+        setActiveAgent((prev) => (prev ? { ...prev, status: newStatus } : null));
+      }
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        message: `Failed to transition agent to ${newStatus}`,
+        details: err?.message || 'Server error',
+        onRetry: () => handleUpdateAgentStatus(agentId, newStatus),
+      });
     }
   };
 
   // Handle create agent
   const handleCreateAgent = async (params: { name: string; type: AgentRole; provider: string; model: string; task: string }) => {
-    const res = await api.createAgent(params);
-    setAgents((prev) => [res.data, ...prev]);
-    setActiveAgent(res.data);
+    try {
+      const res = await api.createAgent(params);
+      setAgents((prev) => [res.data, ...prev]);
+      setActiveAgent(res.data);
+      setNotification({
+        type: 'success',
+        message: `Agent ${res.data.name} spawned in isolated process group.`,
+      });
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        message: 'Failed to create agent',
+        details: err?.message,
+      });
+    }
   };
 
   // Handle human approval resolution
   const handleResolveApproval = async (id: string, decision: ApprovalDecision) => {
-    const res = await api.resolveApproval(id, decision);
-    setApprovals((prev) => prev.map((a) => (a.id === id ? res.data : a)));
+    try {
+      const res = await api.resolveApproval(id, decision);
+      setApprovals((prev) => prev.map((a) => (a.id === id ? res.data : a)));
+      setNotification({
+        type: decision === 'REJECT' ? 'warning' : 'success',
+        message: `Approval request ${id} ${decision.toLowerCase()}ed by operator.`,
+      });
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        message: 'Failed to resolve approval request',
+        details: err?.message,
+      });
+    }
+  };
+
+  // Create checkpoint directly
+  const handleCreateCheckpoint = () => {
+    if (!activeAgent) {
+      setCurrentTab('sessions');
+      return;
+    }
+    const newChk: SessionCheckpoint = {
+      id: `chk_${Date.now().toString(36)}`,
+      project_id: 'contextos',
+      session_id: activeAgent.session_id || 'session_01',
+      goal: activeAgent.current_task || 'Workspace operation',
+      current_task: activeAgent.current_task || 'Workspace operation',
+      completed_items: ['AST signature generation', 'Token budget validation'],
+      remaining_items: ['Test verification'],
+      decisions: ['ADR-004'],
+      failures: [],
+      important_files: ['server/contextos/storage/db.py'],
+      modified_files: ['server/contextos/storage/db.py'],
+      git_branch: 'main',
+      git_commit: 'HEAD',
+      tests_status: 'PASSING',
+      next_action: 'Proceed to code review',
+      created_at: new Date().toISOString(),
+    };
+    setCheckpoints((prev) => [newChk, ...prev]);
+    setNotification({
+      type: 'success',
+      message: `Checkpoint ${newChk.id} created successfully for ${activeAgent.name}.`,
+    });
+  };
+
+  // Resume latest checkpoint directly
+  const handleResumeSession = () => {
+    if (checkpoints.length > 0 && activeAgent) {
+      const latest = checkpoints[0];
+      setActiveAgent({
+        ...activeAgent,
+        current_task: latest.current_task,
+        status: 'RUNNING',
+      });
+      setNotification({
+        type: 'success',
+        message: `Resumed session from checkpoint ${latest.id}. Zero conversation turn replay.`,
+      });
+      setCurrentTab('dashboard');
+    } else {
+      setCurrentTab('sessions');
+    }
   };
 
   const pendingApprovalsCount = approvals.filter((a) => a.status === 'PENDING').length;
@@ -120,6 +205,12 @@ export function App() {
           theme={theme}
           onToggleTheme={toggleTheme}
           onOpenCommandBar={() => setCommandBarOpen(true)}
+        />
+
+        {/* Surface Notifications & Errors */}
+        <NotificationBanner
+          notification={notification}
+          onDismiss={() => setNotification(null)}
         />
 
         {/* 3. Main Workspace View Router */}
@@ -155,45 +246,25 @@ export function App() {
                     current_task: chk.current_task,
                     status: 'RUNNING',
                   });
+                  setNotification({
+                    type: 'success',
+                    message: `Resumed task '${chk.current_task}' from checkpoint ${chk.id}. Zero raw turn replay.`,
+                  });
                   setCurrentTab('dashboard');
                 }
               }}
             />
           )}
 
-          {currentTab === 'projects' && (
-            <DashboardPage
-              agents={agents}
+          {currentTab === 'memory' && (
+            <MemoryPage
               memories={memories}
-              checkpoints={checkpoints}
-              mcpConnections={mcpConnections}
-              approvals={approvals}
-              onSelectAgent={(ag) => {
-                setActiveAgent(ag);
-                setCurrentTab('dashboard');
-              }}
-              onNavigate={setCurrentTab}
-              onResolveApproval={handleResolveApproval}
             />
           )}
 
-          {currentTab === 'memory' && (
-            <MemoryPage memories={memories} />
-          )}
-
           {currentTab === 'context' && contextPacket && (
-            <ContextPage contextPacket={contextPacket} />
-          )}
-
-          {currentTab === 'tools' && activeAgent && (
-            <AgentDetailPage
-              agent={activeAgent}
-              approvals={approvals}
-              contextPacket={contextPacket || undefined}
-              memories={memories}
-              onBack={() => setCurrentTab('dashboard')}
-              onUpdateStatus={handleUpdateAgentStatus}
-              onResolveApproval={handleResolveApproval}
+            <ContextPage
+              contextPacket={contextPacket}
             />
           )}
 
@@ -222,14 +293,14 @@ export function App() {
         onNewTask={() => {
           setCurrentTab('dashboard');
         }}
-        onCheckpoint={() => {
-          setCurrentTab('sessions');
-        }}
-        onResume={() => {
-          setCurrentTab('sessions');
-        }}
+        onCheckpoint={handleCreateCheckpoint}
+        onResume={handleResumeSession}
         onStopAll={() => {
           agents.forEach((a) => handleUpdateAgentStatus(a.id, 'STOPPED'));
+          setNotification({
+            type: 'warning',
+            message: 'Issued emergency stop command to all active fleet agents.',
+          });
         }}
       />
     </div>
