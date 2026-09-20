@@ -443,12 +443,14 @@ class DatabaseManager:
             fts_rows = None
             if query and query.strip():
                 try:
-                    # Sanitize FTS query for boolean / wildcards
                     clean_q = "".join(c for c in query if c.isalnum() or c in (" ", "_", "-")).strip()
                     if clean_q:
-                        fts_sql = "SELECT id, rank FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank LIMIT ?"
-                        cursor.execute(fts_sql, (f"{clean_q}*", limit))
-                        fts_rows = {r["id"]: r["rank"] for r in cursor.fetchall()}
+                        words = [w for w in clean_q.split() if len(w) > 1]
+                        if words:
+                            fts_expr = " OR ".join(f"{w}*" for w in words)
+                            fts_sql = "SELECT id, rank FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank LIMIT ?"
+                            cursor.execute(fts_sql, (fts_expr, limit))
+                            fts_rows = {r["id"]: r["rank"] for r in cursor.fetchall()}
                 except Exception:
                     fts_rows = None
 
