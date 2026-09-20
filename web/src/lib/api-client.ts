@@ -21,6 +21,41 @@ export interface ApiResponse<T> {
   status: 'live' | 'pending';
 }
 
+export function normalizeAgent(raw: any): Agent {
+  const tokenUsage = raw.tokens || raw.token_usage || {};
+  return {
+    id: raw.id,
+    name: raw.name,
+    type: raw.type || raw.role || 'CODER',
+    provider: raw.provider,
+    model: raw.model,
+    status: raw.status || 'IDLE',
+    current_task: raw.current_task || '',
+    tokens: {
+      candidate_tokens: tokenUsage.candidate_tokens || 0,
+      selected_tokens: tokenUsage.selected_tokens || 0,
+      excluded_tokens: tokenUsage.excluded_tokens || 0,
+      estimated_tokens_avoided: tokenUsage.estimated_tokens_avoided || Math.max(0, (tokenUsage.candidate_tokens || 0) - (tokenUsage.selected_tokens || 0)),
+      cache_hits: tokenUsage.cache_hits || 0,
+      total_input_tokens: tokenUsage.total_input_tokens || tokenUsage.selected_tokens || 0,
+      total_output_tokens: tokenUsage.total_output_tokens || 0,
+    },
+    context_size: raw.context_size || raw.context_budget || 8000,
+    runtime_seconds: raw.runtime_seconds || 0,
+    project_id: raw.project_id || 'contextos',
+    session_id: raw.session_id || 'default_session',
+    created_at: raw.created_at || new Date().toISOString(),
+    started_at: raw.started_at,
+    last_activity_at: raw.last_activity_at || new Date().toISOString(),
+    permissions: raw.permissions || {
+      can_execute_shell: false,
+      can_edit_files: true,
+      can_git_commit: false,
+      can_network: false,
+    },
+  };
+}
+
 class ApiClient {
   private isBackendOnline: boolean = false;
   private localAgents: Agent[] = [...INITIAL_AGENTS];
@@ -50,7 +85,8 @@ class ApiClient {
         const res = await fetch(`${BASE_URL}/agents`);
         if (res.ok) {
           const data = await res.json();
-          return { data, isPendingBackend: false, status: 'live' };
+          const normalized = Array.isArray(data) ? data.map(normalizeAgent) : [];
+          return { data: normalized, isPendingBackend: false, status: 'live' };
         }
       } catch (e) {
         console.warn('Backend /agents call failed, falling back to local state:', e);
@@ -101,7 +137,7 @@ class ApiClient {
         });
         if (res.ok) {
           const data = await res.json();
-          return { data, isPendingBackend: false, status: 'live' };
+          return { data: normalizeAgent(data), isPendingBackend: false, status: 'live' };
         }
       } catch (e) {
         console.warn('Backend createAgent call failed, updating local state:', e);
