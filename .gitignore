@@ -36,6 +36,11 @@ node_modules/
 out/
 .cache/
 web/dist/
+*.tsbuildinfo
+
+# Generated test artifacts and reports
+artifacts/e2e/
+reports/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
