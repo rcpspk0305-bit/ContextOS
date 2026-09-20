@@ -30,4 +30,9 @@ class Settings(BaseSettings):
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         return self.DATA_DIR / self.DB_NAME
 
+    @property
+    def workspace_root(self) -> Path:
+        return self.PROJECT_ROOT
+
 settings = Settings()
+

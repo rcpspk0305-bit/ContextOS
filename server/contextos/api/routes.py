@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from contextos.models.agent import Agent, AgentRole, AgentPermissions
 from contextos.models.approval import ApprovalRequest, ApprovalDecision
-from contextos.models.event import EventEnvelope
+from contextos.models.event import EventEnvelope, EventType
 from contextos.models.memory import (
     MemoryType,
     MemoryItem,
@@ -12,6 +12,7 @@ from contextos.models.memory import (
     Checkpoint,
     UniversalSessionEnvelope,
 )
+from contextos.models.context import ContextBundle
 from contextos.runtime.supervisor import agent_runtime
 from contextos.memory.engine import memory_engine
 from contextos.memory.adapters import (
@@ -19,6 +20,7 @@ from contextos.memory.adapters import (
     AGYSessionAdapter,
     GenericJsonSessionAdapter,
 )
+from contextos.context.compiler import context_compiler
 import contextos.storage.db as db_mod
 
 router = APIRouter(prefix="/api")
@@ -277,4 +279,41 @@ def get_session_envelope(session_id: str):
     if not envelope:
         raise HTTPException(status_code=404, detail="Session envelope not found")
     return envelope
+
+# Context Engine Endpoints
+class CompileContextRequest(BaseModel):
+    intent: str
+    active_task: str = ""
+    session_id: str = "default_session"
+    budget: int = 8000
+    system_instructions: Optional[str] = None
+
+@router.post("/context/compile", response_model=ContextBundle)
+async def compile_context(req: CompileContextRequest):
+    return await context_compiler.compile(
+        intent=req.intent,
+        active_task=req.active_task,
+        session_id=req.session_id,
+        budget=req.budget,
+        system_instructions=req.system_instructions,
+    )
+
+@router.get("/context/metrics")
+def get_context_metrics():
+    events = db_mod.db.list_events(limit=500)
+    ctx_events = [e for e in events if e.type == EventType.CONTEXT_GENERATED]
+    total_candidate = sum(e.payload.get("candidate_tokens", 0) for e in ctx_events)
+    total_selected = sum(e.payload.get("total_tokens", 0) for e in ctx_events)
+    total_avoided = sum(e.payload.get("tokens_avoided", 0) for e in ctx_events)
+    overall_ratio = round((total_avoided / total_candidate) * 100.0, 2) if total_candidate > 0 else 0.0
+
+    return {
+        "total_compilations": len(ctx_events),
+        "total_candidate_tokens": total_candidate,
+        "total_selected_tokens": total_selected,
+        "total_tokens_avoided": total_avoided,
+        "average_reduction_ratio": overall_ratio,
+        "estimated": True,
+    }
+
 
