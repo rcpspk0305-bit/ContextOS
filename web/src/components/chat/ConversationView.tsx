@@ -97,7 +97,7 @@ export function ConversationView({
         </div>
         <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
           <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-          <span>{agent.tokens.selected_tokens} / {agent.context_size || 8000} ctx tokens</span>
+          <span>{agent.tokens?.selected_tokens ?? 0} / {agent.context_size || 8000} ctx tokens</span>
         </div>
       </div>
 

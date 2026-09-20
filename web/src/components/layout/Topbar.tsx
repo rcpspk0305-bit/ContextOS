@@ -77,14 +77,14 @@ export function Topbar({
             <Sparkles className="w-3.5 h-3.5 text-sky-400" />
             <span>Tokens:</span>
             <strong className="text-sky-400">
-              {formatNumber(activeAgent ? activeAgent.tokens.selected_tokens : 4150)}
+              {formatNumber(activeAgent?.tokens?.selected_tokens ?? 4150)}
             </strong>
           </div>
           <span className="text-border">|</span>
           <div className="flex items-center gap-1 text-muted-foreground">
             <span>Avoided:</span>
             <strong className="text-emerald-400">
-              {formatNumber(activeAgent ? activeAgent.tokens.estimated_tokens_avoided : 30050)}
+              {formatNumber(activeAgent?.tokens?.estimated_tokens_avoided ?? 30050)}
             </strong>
           </div>
         </div>
