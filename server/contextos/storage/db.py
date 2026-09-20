@@ -17,6 +17,11 @@ from contextos.models.memory import (
     UniversalTurn,
     UniversalSessionEnvelope,
 )
+from contextos.models.analytics import (
+    TokenRecord,
+    AnalyticsSummary,
+    BreakdownItem,
+)
 
 class DatabaseManager:
     def __init__(self, db_path: Optional[Path] = None):
@@ -166,6 +171,37 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS token_records (
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                agent_id TEXT,
+                task_id TEXT,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                candidate_tokens INTEGER NOT NULL,
+                selected_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                tokens_avoided INTEGER NOT NULL,
+                cache_hit_tokens INTEGER NOT NULL,
+                cost_without_usd REAL NOT NULL,
+                cost_with_usd REAL NOT NULL,
+                cost_saved_usd REAL NOT NULL,
+                bytes_avoided INTEGER NOT NULL,
+                estimated INTEGER NOT NULL,
+                metadata TEXT NOT NULL
+            )
+            """)
+
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_records_project ON token_records(project_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_records_session ON token_records(session_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_records_agent ON token_records(agent_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_records_provider ON token_records(provider)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_records_model ON token_records(model)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_records_timestamp ON token_records(timestamp)")
 
             conn.commit()
 
@@ -677,6 +713,215 @@ class DatabaseManager:
                 decisions=json.loads(row["decisions"]),
                 created_at=datetime.fromisoformat(row["created_at"]),
             )
+
+    # Token Records & Telemetry Operations
+    def save_token_record(self, record: TokenRecord):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            INSERT OR REPLACE INTO token_records (
+                id, timestamp, project_id, session_id, agent_id, task_id,
+                provider, model, candidate_tokens, selected_tokens, output_tokens,
+                tokens_avoided, cache_hit_tokens, cost_without_usd, cost_with_usd,
+                cost_saved_usd, bytes_avoided, estimated, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                record.id,
+                record.timestamp.isoformat(),
+                record.project_id,
+                record.session_id,
+                record.agent_id,
+                record.task_id,
+                record.provider,
+                record.model,
+                record.candidate_tokens,
+                record.selected_tokens,
+                record.output_tokens,
+                record.tokens_avoided,
+                record.cache_hit_tokens,
+                record.cost_without_usd,
+                record.cost_with_usd,
+                record.cost_saved_usd,
+                record.bytes_avoided,
+                1 if record.estimated else 0,
+                json.dumps(record.metadata),
+            ))
+            conn.commit()
+
+    def _row_to_token_record(self, row: sqlite3.Row) -> TokenRecord:
+        return TokenRecord(
+            id=row["id"],
+            timestamp=datetime.fromisoformat(row["timestamp"]),
+            project_id=row["project_id"],
+            session_id=row["session_id"],
+            agent_id=row["agent_id"],
+            task_id=row["task_id"],
+            provider=row["provider"],
+            model=row["model"],
+            candidate_tokens=row["candidate_tokens"],
+            selected_tokens=row["selected_tokens"],
+            output_tokens=row["output_tokens"],
+            tokens_avoided=row["tokens_avoided"],
+            cache_hit_tokens=row["cache_hit_tokens"],
+            cost_without_usd=row["cost_without_usd"],
+            cost_with_usd=row["cost_with_usd"],
+            cost_saved_usd=row["cost_saved_usd"],
+            bytes_avoided=row["bytes_avoided"],
+            estimated=bool(row["estimated"]),
+            metadata=json.loads(row["metadata"]),
+        )
+
+    def list_token_records(
+        self,
+        project_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[TokenRecord]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            conditions = []
+            params = []
+            if project_id:
+                conditions.append("project_id = ?")
+                params.append(project_id)
+            if session_id:
+                conditions.append("session_id = ?")
+                params.append(session_id)
+            if agent_id:
+                conditions.append("agent_id = ?")
+                params.append(agent_id)
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            sql = f"SELECT * FROM token_records {where_clause} ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            cursor.execute(sql, params)
+            return [self._row_to_token_record(r) for r in cursor.fetchall()]
+
+    def get_token_summary(
+        self,
+        project_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AnalyticsSummary:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            conditions = []
+            params = []
+            if project_id:
+                conditions.append("project_id = ?")
+                params.append(project_id)
+            if session_id:
+                conditions.append("session_id = ?")
+                params.append(session_id)
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            sql = f"""
+            SELECT
+                COUNT(*) as total_events,
+                COALESCE(SUM(candidate_tokens), 0) as total_candidate,
+                COALESCE(SUM(selected_tokens), 0) as total_selected,
+                COALESCE(SUM(output_tokens), 0) as total_output,
+                COALESCE(SUM(tokens_avoided), 0) as total_avoided,
+                COALESCE(SUM(bytes_avoided), 0) as total_bytes,
+                COALESCE(SUM(cost_without_usd), 0.0) as total_cost_without,
+                COALESCE(SUM(cost_with_usd), 0.0) as total_cost_with,
+                COALESCE(SUM(cost_saved_usd), 0.0) as total_cost_saved,
+                COALESCE(SUM(cache_hit_tokens), 0) as total_cache_hits,
+                COALESCE(SUM(CASE WHEN estimated = 1 THEN 1 ELSE 0 END), 0) as estimated_count,
+                COALESCE(SUM(CASE WHEN estimated = 0 THEN 1 ELSE 0 END), 0) as reported_count
+            FROM token_records {where_clause}
+            """
+            cursor.execute(sql, params)
+            row = cursor.fetchone()
+            if not row or row["total_events"] == 0:
+                return AnalyticsSummary()
+
+            total_events = row["total_events"]
+            total_cand = row["total_candidate"]
+            total_avoid = row["total_avoided"]
+            est_count = row["estimated_count"]
+            rep_count = row["reported_count"]
+            ratio = round((total_avoid / total_cand) * 100.0, 2) if total_cand > 0 else 0.0
+            est_pct = round((est_count / total_events) * 100.0, 1) if total_events > 0 else 100.0
+
+            return AnalyticsSummary(
+                total_events=total_events,
+                total_candidate_tokens=total_cand,
+                total_selected_tokens=row["total_selected"],
+                total_output_tokens=row["total_output"],
+                total_tokens_avoided=total_avoid,
+                overall_reduction_ratio=ratio,
+                bytes_not_transmitted=row["total_bytes"],
+                total_cost_without_usd=round(row["total_cost_without"], 4),
+                total_cost_with_usd=round(row["total_cost_with"], 4),
+                cost_saved_usd=round(row["total_cost_saved"], 4),
+                cache_hits=row["total_cache_hits"],
+                estimated_percentage=est_pct,
+                provider_reported_events=rep_count,
+                estimated_events=est_count,
+            )
+
+    def get_token_breakdown(
+        self,
+        dimension: str = "provider",
+        project_id: Optional[str] = None,
+    ) -> List[BreakdownItem]:
+        valid_dimensions = {
+            "provider": "provider",
+            "model": "model",
+            "agent": "agent_id",
+            "project": "project_id",
+            "session": "session_id",
+        }
+        col = valid_dimensions.get(dimension.lower(), "provider")
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            conditions = []
+            params = []
+            if project_id:
+                conditions.append("project_id = ?")
+                params.append(project_id)
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            sql = f"""
+            SELECT
+                COALESCE({col}, 'unknown') as dim_key,
+                COUNT(*) as event_count,
+                COALESCE(SUM(candidate_tokens), 0) as cand,
+                COALESCE(SUM(selected_tokens), 0) as sel,
+                COALESCE(SUM(output_tokens), 0) as out_tok,
+                COALESCE(SUM(tokens_avoided), 0) as avoided,
+                COALESCE(SUM(cost_without_usd), 0.0) as cost_without,
+                COALESCE(SUM(cost_with_usd), 0.0) as cost_with,
+                COALESCE(SUM(cost_saved_usd), 0.0) as cost_saved
+            FROM token_records {where_clause}
+            GROUP BY {col}
+            ORDER BY avoided DESC
+            """
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+            items = []
+            for r in rows:
+                c = r["cand"]
+                a = r["avoided"]
+                ratio = round((a / c) * 100.0, 2) if c > 0 else 0.0
+                items.append(
+                    BreakdownItem(
+                        dimension=dimension,
+                        key=str(r["dim_key"]),
+                        count=r["event_count"],
+                        candidate_tokens=c,
+                        selected_tokens=r["sel"],
+                        output_tokens=r["out_tok"],
+                        tokens_avoided=a,
+                        reduction_ratio=ratio,
+                        cost_without_usd=round(r["cost_without"], 4),
+                        cost_with_usd=round(r["cost_with"], 4),
+                        cost_saved_usd=round(r["cost_saved"], 4),
+                    )
+                )
+            return items
 
 db = DatabaseManager()
 
