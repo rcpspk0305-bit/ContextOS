@@ -172,7 +172,7 @@ export function AgentsPage({
               <div className="grid grid-cols-3 gap-2 font-mono text-[11px] bg-background/50 p-2 rounded-lg border border-border/40 text-center">
                 <div>
                   <div className="text-muted-foreground text-[9px] uppercase">Tokens</div>
-                  <div className="font-semibold text-sky-400">{formatNumber(ag.tokens.selected_tokens)}</div>
+                  <div className="font-semibold text-sky-400">{formatNumber(ag.tokens?.selected_tokens ?? 0)}</div>
                 </div>
                 <div>
                   <div className="text-muted-foreground text-[9px] uppercase">Context</div>

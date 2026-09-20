@@ -305,10 +305,10 @@ export function AgentDetailPage({
             <div className="p-4 rounded-xl border border-border bg-card space-y-2">
               <h3 className="font-semibold text-sm text-foreground">Token Consumption Profile</h3>
               <div className="font-mono text-xs space-y-1 pt-2">
-                <div className="flex justify-between"><span>Candidate Tokens:</span> <strong>{formatNumber(agent.tokens.candidate_tokens)}</strong></div>
-                <div className="flex justify-between text-sky-400"><span>Dispatched Tokens:</span> <strong>{formatNumber(agent.tokens.selected_tokens)}</strong></div>
-                <div className="flex justify-between text-emerald-400"><span>Avoided Tokens:</span> <strong>{formatNumber(agent.tokens.estimated_tokens_avoided)}</strong></div>
-                <div className="flex justify-between"><span>Prompt Cache Hits:</span> <strong>{agent.tokens.cache_hits}</strong></div>
+                <div className="flex justify-between"><span>Candidate Tokens:</span> <strong>{formatNumber(agent.tokens?.candidate_tokens ?? 0)}</strong></div>
+                <div className="flex justify-between text-sky-400"><span>Dispatched Tokens:</span> <strong>{formatNumber(agent.tokens?.selected_tokens ?? 0)}</strong></div>
+                <div className="flex justify-between text-emerald-400"><span>Avoided Tokens:</span> <strong>{formatNumber(agent.tokens?.estimated_tokens_avoided ?? 0)}</strong></div>
+                <div className="flex justify-between"><span>Prompt Cache Hits:</span> <strong>{agent.tokens?.cache_hits ?? 0}</strong></div>
               </div>
             </div>
 

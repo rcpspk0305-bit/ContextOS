@@ -234,8 +234,8 @@ export function DashboardPage({
 
                 <div className="flex items-center gap-3 flex-shrink-0 justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-border/40">
                   <div className="text-right font-mono text-[11px] text-muted-foreground hidden sm:block">
-                    <div>{formatNumber(ag.tokens.selected_tokens)} ctx tokens</div>
-                    <div className="text-[10px] text-emerald-400">-{formatNumber(ag.tokens.estimated_tokens_avoided)} avoided</div>
+                    <div>{formatNumber(ag.tokens?.selected_tokens ?? 0)} ctx tokens</div>
+                    <div className="text-[10px] text-emerald-400">-{formatNumber(ag.tokens?.estimated_tokens_avoided ?? 0)} avoided</div>
                   </div>
 
                   <Badge
