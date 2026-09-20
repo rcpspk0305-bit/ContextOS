@@ -21,6 +21,13 @@ from contextos.memory.adapters import (
     GenericJsonSessionAdapter,
 )
 from contextos.context.compiler import context_compiler
+from contextos.models.analytics import (
+    TokenRecord,
+    AnalyticsSummary,
+    BreakdownItem,
+    ComparisonSeries,
+)
+from contextos.analytics.engine import analytics_engine
 import contextos.storage.db as db_mod
 
 router = APIRouter(prefix="/api")
@@ -315,5 +322,58 @@ def get_context_metrics():
         "average_reduction_ratio": overall_ratio,
         "estimated": True,
     }
+
+# Analytics & Token Telemetry Endpoints
+class RecordTokenRequest(BaseModel):
+    project_id: str = "contextos"
+    session_id: str = "default_session"
+    agent_id: Optional[str] = None
+    task_id: Optional[str] = None
+    provider: str = "OpenAI"
+    model: str = "gpt-4o"
+    candidate_tokens: int = 0
+    selected_tokens: int = 0
+    output_tokens: int = 0
+    cache_hit_tokens: int = 0
+    estimated: bool = True
+    metadata: Dict[str, Any] = {}
+
+@router.get("/analytics/summary", response_model=AnalyticsSummary)
+def get_analytics_summary(
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+):
+    return analytics_engine.get_summary(project_id=project_id, session_id=session_id)
+
+@router.get("/analytics/breakdown", response_model=List[BreakdownItem])
+def get_analytics_breakdown(
+    by: str = Query(default="provider", pattern="^(provider|model|agent|project|session)$"),
+    project_id: Optional[str] = None,
+):
+    return analytics_engine.get_breakdown(dimension=by, project_id=project_id)
+
+@router.get("/analytics/comparison", response_model=ComparisonSeries)
+def get_analytics_comparison(
+    project_id: Optional[str] = None,
+    limit: int = Query(default=15, le=100),
+):
+    return analytics_engine.get_comparison(project_id=project_id, limit=limit)
+
+@router.post("/analytics/record", response_model=TokenRecord)
+def record_token_event(req: RecordTokenRequest):
+    return analytics_engine.record_event(
+        project_id=req.project_id,
+        session_id=req.session_id,
+        agent_id=req.agent_id,
+        task_id=req.task_id,
+        provider=req.provider,
+        model=req.model,
+        candidate_tokens=req.candidate_tokens,
+        selected_tokens=req.selected_tokens,
+        output_tokens=req.output_tokens,
+        cache_hit_tokens=req.cache_hit_tokens,
+        estimated=req.estimated,
+        metadata=req.metadata,
+    )
 
 
