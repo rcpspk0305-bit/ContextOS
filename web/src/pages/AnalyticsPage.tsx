@@ -82,11 +82,11 @@ export function AnalyticsPage({ agents }: { agents: Agent[] }) {
   const [isLoading, setIsLoading] = useState(false);
 
   // Fallback calculations from agent props if backend is unavailable
-  const fallbackCandidate = agents.reduce((sum, a) => sum + a.tokens.candidate_tokens, 0) || 142000;
-  const fallbackSelected = agents.reduce((sum, a) => sum + a.tokens.selected_tokens, 0) || 21500;
+  const fallbackCandidate = agents.reduce((sum, a) => sum + (a.tokens?.candidate_tokens || 0), 0) || 142000;
+  const fallbackSelected = agents.reduce((sum, a) => sum + (a.tokens?.selected_tokens || 0), 0) || 21500;
   const fallbackAvoided = Math.max(0, fallbackCandidate - fallbackSelected);
-  const fallbackReduction = ((fallbackAvoided / fallbackCandidate) * 100).toFixed(1);
-  const fallbackCacheHits = agents.reduce((sum, a) => sum + a.tokens.cache_hits, 0) || 48;
+  const fallbackReduction = fallbackCandidate > 0 ? ((fallbackAvoided / fallbackCandidate) * 100).toFixed(1) : '0.0';
+  const fallbackCacheHits = agents.reduce((sum, a) => sum + (a.tokens?.cache_hits || 0), 0) || 48;
   const fallbackBytes = fallbackAvoided * 4;
 
   useEffect(() => {
@@ -324,9 +324,9 @@ export function AnalyticsPage({ agents }: { agents: Agent[] }) {
               </thead>
               <tbody className="divide-y divide-border/40">
                 {agents.map((ag) => {
-                  const cand = ag.tokens.candidate_tokens || 1;
-                  const sel = ag.tokens.selected_tokens;
-                  const avoided = ag.tokens.estimated_tokens_avoided;
+                  const cand = ag.tokens?.candidate_tokens || 1;
+                  const sel = ag.tokens?.selected_tokens || 0;
+                  const avoided = ag.tokens?.estimated_tokens_avoided || 0;
                   const pct = cand > 0 ? ((avoided / cand) * 100).toFixed(1) : '0.0';
                   return (
                     <tr key={ag.id} className="hover:bg-secondary/20">

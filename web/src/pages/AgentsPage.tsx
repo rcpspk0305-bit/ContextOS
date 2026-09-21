@@ -44,9 +44,14 @@ export function AgentsPage({
 
   const roles: AgentRole[] = ['PLANNER', 'CODER', 'REVIEWER', 'RESEARCHER', 'TESTER'];
 
+  // Defense-in-depth: Deduplicate agents by type and name signature so identical role cards never duplicate
+  const uniqueAgents = Array.from(
+    new Map(agents.map((a) => [`${a.type}_${a.name}`, a])).values()
+  );
+
   const filteredAgents = selectedRole === 'ALL'
-    ? agents
-    : agents.filter((a) => a.type === selectedRole);
+    ? uniqueAgents
+    : uniqueAgents.filter((a) => a.type === selectedRole);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,7 +95,7 @@ export function AgentsPage({
           <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
             Supervised Agent Fleet
             <span className="text-xs font-mono font-medium px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-              {agents.length} Registered
+              {uniqueAgents.length} Registered
             </span>
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -118,10 +123,10 @@ export function AgentsPage({
               : 'bg-secondary/60 text-muted-foreground hover:text-foreground'
           }`}
         >
-          All Roles ({agents.length})
+          All Roles ({uniqueAgents.length})
         </button>
         {roles.map((r) => {
-          const count = agents.filter((a) => a.type === r).length;
+          const count = uniqueAgents.filter((a) => a.type === r).length;
           return (
             <button
               key={r}
