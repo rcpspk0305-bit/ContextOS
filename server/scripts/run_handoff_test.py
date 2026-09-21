@@ -10,11 +10,18 @@ from contextos.runtime.supervisor import agent_runtime
 from contextos.memory.engine import memory_engine
 from contextos.context.compiler import context_compiler
 from contextos.analytics.engine import analytics_engine
-from contextos.storage.db import db
+from contextos.storage.db import db, DatabaseManager
 
 async def run_handoff_simulation():
     print("=== [PHASE 8] Cross-Agent Interoperability & Handoff Test ===")
     start_time = time.time()
+
+    # Isolate simulation database from production
+    sim_dir = Path("reports/handoff-test")
+    sim_dir.mkdir(parents=True, exist_ok=True)
+    sim_db = DatabaseManager(sim_dir / "simulation.db")
+    if hasattr(db, "set_target"):
+        db.set_target(sim_db)
 
     # 1. Codex Agent (Session A)
     print("\n[1] Starting Session A (OpenAI Codex)...")
