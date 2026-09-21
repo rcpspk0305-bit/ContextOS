@@ -202,8 +202,132 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_records_provider ON token_records(provider)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_records_model ON token_records(model)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_records_timestamp ON token_records(timestamp)")
-
             conn.commit()
+
+        self._seed_canonical_fleet()
+
+    def _seed_canonical_fleet(self):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM agents")
+            count = cursor.fetchone()[0]
+            if count == 0:
+                now = datetime.now(timezone.utc)
+                canonical_agents = [
+                    Agent(
+                        id="ag-planner-01",
+                        name="Architecture Planner",
+                        role=AgentRole.PLANNER,
+                        provider="Antigravity (AGY)",
+                        model="gemini-2.5-pro",
+                        status=AgentStatus.COMPLETED,
+                        current_task="Compiled Target Architecture blueprint & Open Source Software reuse plan",
+                        created_at=now,
+                        last_activity_at=now,
+                        context_budget=8000,
+                        token_usage=TokenUsage(
+                            candidate_tokens=48000,
+                            selected_tokens=6200,
+                            excluded_tokens=41800,
+                            estimated_tokens_avoided=41800,
+                            cache_hits=8,
+                            total_input_tokens=6200,
+                            total_output_tokens=2400,
+                        ),
+                        permissions=AgentPermissions(can_execute_shell=False, can_edit_files=True, can_git_commit=False, can_network=False),
+                    ),
+                    Agent(
+                        id="ag-coder-01",
+                        name="ContextOS Core Coder",
+                        role=AgentRole.CODER,
+                        provider="OpenAI / Codex",
+                        model="gpt-4o",
+                        status=AgentStatus.RUNNING,
+                        current_task="Implementing ApprovalCard component with shadcn/ui and assistant-ui patterns",
+                        created_at=now,
+                        started_at=now,
+                        last_activity_at=now,
+                        context_budget=8000,
+                        token_usage=TokenUsage(
+                            candidate_tokens=34200,
+                            selected_tokens=4150,
+                            excluded_tokens=30050,
+                            estimated_tokens_avoided=30050,
+                            cache_hits=12,
+                            total_input_tokens=4150,
+                            total_output_tokens=1280,
+                        ),
+                        permissions=AgentPermissions(can_execute_shell=True, can_edit_files=True, can_git_commit=True, can_network=False),
+                    ),
+                    Agent(
+                        id="ag-reviewer-01",
+                        name="Security & Diff Reviewer",
+                        role=AgentRole.REVIEWER,
+                        provider="OpenAI / Codex",
+                        model="o3-mini",
+                        status=AgentStatus.WAITING_APPROVAL,
+                        current_task="Reviewing uncommitted git patch for path jailing and shell timeout policy",
+                        created_at=now,
+                        last_activity_at=now,
+                        context_budget=8000,
+                        token_usage=TokenUsage(
+                            candidate_tokens=18500,
+                            selected_tokens=3100,
+                            excluded_tokens=15400,
+                            estimated_tokens_avoided=15400,
+                            cache_hits=4,
+                            total_input_tokens=3100,
+                            total_output_tokens=950,
+                        ),
+                        permissions=AgentPermissions(can_execute_shell=False, can_edit_files=False, can_git_commit=False, can_network=False),
+                    ),
+                    Agent(
+                        id="ag-researcher-01",
+                        name="Documentation Researcher",
+                        role=AgentRole.RESEARCHER,
+                        provider="Antigravity (AGY)",
+                        model="gemini-1.5-flash",
+                        status=AgentStatus.IDLE,
+                        current_task="Indexing MCP v2 specifications and streamable transport patterns",
+                        created_at=now,
+                        last_activity_at=now,
+                        context_budget=8000,
+                        token_usage=TokenUsage(
+                            candidate_tokens=22000,
+                            selected_tokens=3400,
+                            excluded_tokens=18600,
+                            estimated_tokens_avoided=18600,
+                            cache_hits=6,
+                            total_input_tokens=3400,
+                            total_output_tokens=1100,
+                        ),
+                        permissions=AgentPermissions(can_execute_shell=False, can_edit_files=False, can_git_commit=False, can_network=True),
+                    ),
+                    Agent(
+                        id="ag-tester-01",
+                        name="Test Automation Specialist",
+                        role=AgentRole.TESTER,
+                        provider="OpenAI / Codex",
+                        model="gpt-4o-mini",
+                        status=AgentStatus.IDLE,
+                        current_task="Verifying 8-state transition machine and path jailing boundaries",
+                        created_at=now,
+                        last_activity_at=now,
+                        context_budget=8000,
+                        token_usage=TokenUsage(
+                            candidate_tokens=16000,
+                            selected_tokens=2800,
+                            excluded_tokens=13200,
+                            estimated_tokens_avoided=13200,
+                            cache_hits=5,
+                            total_input_tokens=2800,
+                            total_output_tokens=850,
+                        ),
+                        permissions=AgentPermissions(can_execute_shell=True, can_edit_files=False, can_git_commit=False, can_network=False),
+                    ),
+                ]
+                for agent in canonical_agents:
+                    self.save_agent(agent)
 
     # Agent Operations
     def save_agent(self, agent: Agent):
@@ -923,5 +1047,19 @@ class DatabaseManager:
                 )
             return items
 
-db = DatabaseManager()
+class DatabaseProxy:
+    def __init__(self, target: DatabaseManager):
+        self._target = target
+
+    def set_target(self, target: DatabaseManager):
+        self._target = target
+
+    def get_target(self) -> DatabaseManager:
+        return self._target
+
+    def __getattr__(self, name: str):
+        return getattr(self._target, name)
+
+_default_db = DatabaseManager()
+db = DatabaseProxy(_default_db)
 

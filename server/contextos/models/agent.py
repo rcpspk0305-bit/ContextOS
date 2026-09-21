@@ -53,3 +53,7 @@ class Agent(BaseModel):
     token_usage: TokenUsage = Field(default_factory=TokenUsage)
     permissions: AgentPermissions = Field(default_factory=AgentPermissions)
     runtime_seconds: int = 0
+
+    @property
+    def tokens(self) -> TokenUsage:
+        return self.token_usage
